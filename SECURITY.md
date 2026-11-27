@@ -6,7 +6,11 @@ Security fixes are applied to the latest published minor version of `pylogcage`.
 
 ## Reporting a vulnerability
 
-Please do not open a public issue for a vulnerability. Use the GitHub Security Advisories workflow for `draarivpatel-ui/pylogcage`. Include:
+Please do not open a public issue for a vulnerability. Use the private security advisory form for this repository:
+
+https://github.com/draarivpatel-ui/pylogcage/security/advisories/new
+
+Include:
 
 - A minimal reproducer.
 - The affected version and Python version.
@@ -17,7 +21,7 @@ Do not include live credentials or private user data in a report. Use synthetic 
 
 ## Response expectations
 
-The maintainer will acknowledge reports as soon as practical, assess impact, prepare a fix with regression tests, and coordinate disclosure when needed. Security issues that can expose secrets or terminal control sequences are treated as high priority.
+Reports are acknowledged within 3 business days. Initial triage is targeted within 14 days. A fix, mitigation, or documented resolution is targeted within 90 days. Fixes include regression tests, and disclosure is coordinated when needed. Security issues that can expose secrets or terminal control sequences are treated as high priority.
 
 ## Scope notes
 
