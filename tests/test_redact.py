@@ -374,6 +374,34 @@ class TestRedactionOrdering(PylogcageTestCase):
     def test_tab_obfuscated_password_redacted(self):
         self.assertEqual(sanitize_log_line("password=ab\tcdef"), "password=[REDACTED]")
 
+    def test_auth_scheme_control_separators_redacted(self):
+        token = "abcdefgh12345678"
+        for separator in ("\n", "\r", "\x00", "\u200b"):
+            with self.subTest(separator=repr(separator)):
+                output = sanitize_log_line("Authorization: Bearer" + separator + token)
+                self.assertIn("[REDACTED]", output)
+                self.assertNotIn(token, output)
+
+    def test_cookie_line_break_before_value_redacted(self):
+        for separator in ("\n", "\r"):
+            with self.subTest(separator=repr(separator)):
+                output = redact_secrets("Cookie:" + separator + "session=abcdef")
+                self.assertIn("[REDACTED]", output)
+                self.assertNotIn("session=abcdef", output)
+
+    def test_cookie_header_name_control_obfuscated_redacted(self):
+        for header in ("Coo\nkie", "Set-\r\nCookie"):
+            with self.subTest(header=repr(header)):
+                output = redact_secrets(header + ": session=abcdef")
+                self.assertIn("[REDACTED]", output)
+                self.assertNotIn("session=abcdef", output)
+
+    def test_extra_secret_control_replaces_space(self):
+        for control in ("\n", "\r", "\t", "\x00", "\u200b", "\r\n", "\x00\x00", "\u200b\n"):
+            with self.subTest(control=repr(control)):
+                output = redact_secrets("x alpha" + control + "beta y", extra_secrets=["alpha beta"])
+                self.assertEqual(output, "x " + R + " y")
+
     def test_linebreak_obfuscated_extra_secret_redacted(self):
         output = sanitize_log_line("x a\nbc y", extra_secrets=["abc"])
         self.assertEqual(output, "x [REDACTED] y")

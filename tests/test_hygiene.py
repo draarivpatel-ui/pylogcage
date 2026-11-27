@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import os
 import re
+import subprocess
 import unittest
 
 import pylogcage
@@ -12,12 +13,32 @@ from helpers import PylogcageTestCase
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def _hygiene_text_file(name):
+    return name.endswith((".py", ".md", ".toml", ".yml", ".txt", ".in")) or name in ("LICENSE", ".gitignore", ".gitattributes")
+
+
 def tracked_text_files():
+    try:
+        git_output = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.CalledProcessError):
+        git_output = None
+    if git_output is not None:
+        output = []
+        for raw_name in git_output.split(b"\0"):
+            if not raw_name:
+                continue
+            name = os.path.basename(os.fsdecode(raw_name))
+            if _hygiene_text_file(name):
+                path = os.path.join(ROOT, os.fsdecode(raw_name))
+                if os.path.isfile(path):
+                    output.append(path)
+        return sorted(output)
+
     output = []
     for base, dirs, files in os.walk(ROOT):
         dirs[:] = [item for item in dirs if item not in (".git", "__pycache__", "build", "dist")]
         for name in files:
-            if name.endswith((".py", ".md", ".toml", ".yml", ".txt", ".in")) or name in ("LICENSE", ".gitignore", ".gitattributes"):
+            if _hygiene_text_file(name):
                 output.append(os.path.join(base, name))
     return sorted(output)
 
@@ -111,6 +132,23 @@ class TestPackageHygiene(PylogcageTestCase):
         text = read_text(os.path.join(ROOT, "LICENSE"))
         self.assertIn("MIT License", text)
         self.assertIn("Permission is hereby granted", text)
+
+    def test_untracked_files_not_scanned_in_git_checkout(self):
+        inside_git = subprocess.call(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ) == 0
+        if not inside_git:
+            self.skipTest("git checkout required")
+        probe = os.path.join(ROOT, "UNTRACKED_HYGIENE_PROBE.md")
+        with open(probe, "w", encoding="utf-8") as handle:
+            handle.write("untracked probe\n")
+        try:
+            self.assertNotIn(probe, tracked_text_files())
+        finally:
+            os.remove(probe)
 
     def test_no_crlf_in_text_files(self):
         offenders = [path for path in tracked_text_files() if b"\r\n" in read_bytes(path)]

@@ -4,7 +4,11 @@
 
 ## Install
 
-PyPI publication is pending final review. The package name `pylogcage` was verified as unclaimed before release preparation, but it is not installable from PyPI until the first trusted publication is made.
+PyPI publication is pending final review. The package name `pylogcage` was verified as unclaimed before release preparation, but it is not installable from PyPI until the first trusted publication is made. Until then, install from the public GitHub repository or use a source checkout:
+
+```bash
+python3 -m pip install git+https://github.com/draarivpatel-ui/pylogcage.git
+```
 
 For local development:
 
@@ -190,7 +194,7 @@ Audit exit codes:
 - `1`: at least one CWE-117 marker, terminal escape attack, invalid UTF-8 sequence, or secret-shaped leak
 - `2`: usage error, I/O error, or a rejected source type
 
-File audit uses `os.open` and `os.fstat` and rejects FIFOs, devices, directories, sockets, and other non-regular files. Output contains line numbers and finding types only, never raw secrets or raw log lines.
+File audit uses `os.open` and `os.fstat` and rejects symlinks, FIFOs, devices, directories, sockets, other non-regular files, and regular files larger than 64 MiB. Output contains line numbers and finding types only, never raw secrets or raw log lines.
 
 ## Security properties and limits
 
@@ -210,4 +214,4 @@ PYTHONPATH=src python3 -m unittest discover -s tests
 python3 -m build
 ```
 
-The project supports Python 3.9 through 3.13. Contributions must keep the runtime dependency-free and must not introduce dynamic typing syntax or standard-library modules unavailable on Python 3.9.
+The standard-library test suite currently contains 634 tests. The project supports Python 3.9 through 3.13. Contributions must keep the runtime dependency-free and must not introduce dynamic typing syntax or standard-library modules unavailable on Python 3.9.

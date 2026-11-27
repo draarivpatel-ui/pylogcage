@@ -5,6 +5,8 @@ import os
 import tempfile
 import unittest
 
+from pylogcage.audit import MAX_AUDIT_FILE_BYTES
+
 from helpers import PylogcageTestCase, run_cli
 
 
@@ -161,6 +163,27 @@ class TestCliAudit(PylogcageTestCase):
             path = os.path.join(folder, "missing.log")
             result = run_cli(["audit", path])
         self.assertEqual(result.returncode, 2)
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlink support required")
+    def test_audit_symlink_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            real = os.path.join(folder, "real.log")
+            link = os.path.join(folder, "link.log")
+            with open(real, "wb") as handle:
+                handle.write(b"safe\n")
+            os.symlink(real, link)
+            result = run_cli(["audit", link])
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(b"symbolic link", result.stderr)
+
+    def test_audit_oversized_regular_file_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "oversized.log")
+            with open(path, "wb") as handle:
+                handle.truncate(MAX_AUDIT_FILE_BYTES + 1)
+            result = run_cli(["audit", path])
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(b"maximum regular-file size", result.stderr)
 
     @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO support required")
     def test_audit_fifo_rejected(self):

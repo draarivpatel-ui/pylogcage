@@ -11,6 +11,7 @@ from .redactor import secret_finding_kinds
 from .sanitizer import is_sequence_start_c1, is_unsafe_control_or_format_char
 
 MAX_AUDIT_FINDINGS = 1000
+MAX_AUDIT_FILE_BYTES = 64 * 1024 * 1024
 
 
 class AuditInputError(OSError):
@@ -165,6 +166,8 @@ def audit_stream(stream: BinaryIO, *, max_findings: int = MAX_AUDIT_FINDINGS) ->
 
 
 def _open_regular_file(path: str) -> BinaryIO:
+    if stat.S_ISLNK(os.lstat(path).st_mode):
+        raise AuditInputError("audit source is a symbolic link")
     flags = os.O_RDONLY
     if hasattr(os, "O_NONBLOCK"):
         flags |= os.O_NONBLOCK
@@ -177,6 +180,8 @@ def _open_regular_file(path: str) -> BinaryIO:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode):
             raise AuditInputError("audit source is not a regular file")
+        if info.st_size > MAX_AUDIT_FILE_BYTES:
+            raise AuditInputError("audit source exceeds the maximum regular-file size of " + str(MAX_AUDIT_FILE_BYTES) + " bytes")
         return os.fdopen(fd, "rb")
     except Exception:
         os.close(fd)
