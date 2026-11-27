@@ -4,7 +4,7 @@ from __future__ import annotations
 import base64
 import re
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .errors import LogCageInputError, invalid_options
 from .sanitizer import (
@@ -196,6 +196,35 @@ def _collapsed_detection_view(text: str) -> Tuple[str, List[int]]:
     return "".join(chars), mapping
 
 
+def _whitespace_normalized_detection_view(text: str) -> Tuple[str, List[int]]:
+    """Replace every unsafe control or format char with one ASCII space.
+
+    Some secret grammar separators are themselves whitespace, most importantly
+    the space after an authorization scheme or inside a caller-supplied secret.
+    The collapsed view intentionally joins control-interrupted fragments, but
+    that join would erase those separators. This complementary view preserves
+    separator shape while remaining control-resistant.
+    """
+    chars = []  # type: List[str]
+    mapping = []  # type: List[int]
+    for index, ch in enumerate(text):
+        if is_unsafe_control_or_format_char(ch):
+            chars.append(" ")
+        else:
+            chars.append(ch)
+        mapping.append(index)
+    return "".join(chars), mapping
+
+
+def _detection_view_specs(text: str) -> List[Tuple[Callable[[str], Tuple[str, List[int]]], bool]]:
+    """Return detection view factories paired with cookie-detection flags."""
+    specs = [(detection_view, True)]  # type: List[Tuple[Callable[[str], Tuple[str, List[int]]], bool]]
+    if any(is_unsafe_control_or_format_char(ch) for ch in text):
+        specs.append((_whitespace_normalized_detection_view, False))
+        specs.append((_collapsed_detection_view, False))
+    return specs
+
+
 def _is_pem_label_char(cp: int) -> bool:
     return _is_ascii_alnum(cp) or cp == 32
 
@@ -338,7 +367,14 @@ def _cookie_name_length(text: str, index: int) -> int:
     return 0
 
 
-_COOKIE_CANDIDATE_RE = re.compile(r"(?<![A-Za-z0-9_])(?:set-cookie|cookie)(?![A-Za-z0-9_-])", re.IGNORECASE | re.ASCII)
+def _loose_cookie_name_pattern(name: str) -> str:
+    return r"[\t\r\n]*".join(re.escape(ch) for ch in name)
+
+
+_COOKIE_CANDIDATE_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:" + _loose_cookie_name_pattern("set-cookie") + "|" + _loose_cookie_name_pattern("cookie") + r")(?![A-Za-z0-9_-])",
+    re.IGNORECASE | re.ASCII,
+)
 
 
 def detect_cookie_spans(text: str) -> List[Span]:
@@ -351,12 +387,12 @@ def detect_cookie_spans(text: str) -> List[Span]:
             continue
         name_length = len(match.group(0))
         cursor = index + name_length
-        while cursor < n and text[cursor] in " \t":
+        while cursor < n and text[cursor] in " \t\r\n":
             cursor += 1
         if cursor >= n or text[cursor] != ":":
             continue
         cursor += 1
-        while cursor < n and text[cursor] in " \t":
+        while cursor < n and text[cursor] in " \t\r\n":
             cursor += 1
         value_start = cursor
         while cursor < n and text[cursor] not in "\r\n":
@@ -536,13 +572,27 @@ def _percent_encode_bytes(data: bytes, plus: bool = False) -> str:
     return "".join(out)
 
 
+def _extra_secret_raw_pattern(raw: str) -> str:
+    pieces = []  # type: List[str]
+    in_whitespace = False
+    for ch in raw:
+        if ch.isspace():
+            if not in_whitespace:
+                pieces.append(r"\s+")
+                in_whitespace = True
+        else:
+            pieces.append(re.escape(ch))
+            in_whitespace = False
+    return "".join(pieces)
+
+
 def _extra_secret_patterns(secret: SecretValue) -> List[Tuple[str, int]]:
     raw = secret.text
     data = secret.data
     standard64 = base64.b64encode(data).decode("ascii")
     url64 = base64.urlsafe_b64encode(data).decode("ascii")
     variants = [
-        (re.escape(raw), re.IGNORECASE),
+        (_extra_secret_raw_pattern(raw), re.IGNORECASE),
         (_percent_hex_pattern(_percent_encode_bytes(data, False)), 0),
         (_percent_hex_pattern(_percent_encode_bytes(data, True)), 0),
         (re.escape(standard64), 0),
@@ -687,12 +737,9 @@ def redact_control_insensitive(text: str, *, extra_secrets: Sequence[SecretValue
     """
     replacement = validate_replacement(replacement)
     original_spans = []  # type: List[Span]
-    view_factories = [detection_view]
-    if any(is_unsafe_control_or_format_char(ch) for ch in text):
-        view_factories.append(_collapsed_detection_view)
-    for view_index, view_factory in enumerate(view_factories):
+    for view_factory, include_cookie in _detection_view_specs(text):
         view, mapping = view_factory(text)
-        detected = detect_secret_spans(view, extra_secrets=extra_secrets, pii=pii, include_cookie=view_index == 0)
+        detected = detect_secret_spans(view, extra_secrets=extra_secrets, pii=pii, include_cookie=include_cookie)
         for start, end, kind in detected:
             original_start, original_end = map_detection_span(mapping, start, end)
             original_spans.append((original_start, original_end, kind))
@@ -722,11 +769,10 @@ def redact_secrets(text: str, *, extra_secrets: Optional[Iterable[object]] = Non
 def secret_finding_kinds(text: str) -> List[str]:
     """Return secret finding type names without exposing any secret content."""
     working = strip_terminal_sequences(text)
-    view, _mapping = detection_view(working)
-    kinds = set(kind for _start, _end, kind in detect_secret_spans(view))
-    if any(is_unsafe_control_or_format_char(ch) for ch in working):
-        collapsed, _collapsed_mapping = _collapsed_detection_view(working)
+    kinds = set()
+    for view_factory, include_cookie in _detection_view_specs(working):
+        view, _mapping = view_factory(working)
         kinds.update(
-            kind for _start, _end, kind in detect_secret_spans(collapsed, include_cookie=False)
+            kind for _start, _end, kind in detect_secret_spans(view, include_cookie=include_cookie)
         )
     return sorted(kinds)

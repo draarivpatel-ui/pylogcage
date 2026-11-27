@@ -6,7 +6,7 @@ Security fixes are applied to the latest published minor version of `pylogcage`.
 
 ## Reporting a vulnerability
 
-Please do not open a public issue for a vulnerability. Use the GitHub Security Advisories workflow for `draarivpatel-ui/pylogcage` once the repository is public. Include:
+Please do not open a public issue for a vulnerability. Use the GitHub Security Advisories workflow for `draarivpatel-ui/pylogcage`. Include:
 
 - A minimal reproducer.
 - The affected version and Python version.
