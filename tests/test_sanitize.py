@@ -234,6 +234,53 @@ class TestTruncation(PylogcageTestCase):
         self.assertNotIn("\ud800", output)
         self.assertNotIn("\udc00", output)
 
+
+    def test_custom_marker_length_matrix(self):
+        cases = [
+            ("!", "abcdefghijklmno!"),
+            ("...", "abcdefghijklm..."),
+            ("[CUT]", "abcdefghijk[CUT]"),
+            ("#" * 15, "a" + "#" * 15),
+        ]
+
+        for marker, expected in cases:
+            with self.subTest(marker=marker):
+                output = sanitize_log_line(
+                    "abcdefghijklmnopqrstuvwxyz",
+                    max_length=16,
+                    truncation_marker=marker,
+                )
+                self.assertEqual(output, expected)
+                self.assertEqual(len(output), 16)
+
+    def test_invalid_custom_marker_matrix(self):
+        for marker in ("", "x" * 17, "bad\x00", "bad\r"):
+            with self.subTest(marker=marker):
+                with self.assertRaises(LogCageError):
+                    sanitize_log_line(
+                        "abcdefghijklmnopqrstuvwxyz",
+                        max_length=16,
+                        truncation_marker=marker,
+                    )
+
+    def test_custom_marker_preserves_escape_token(self):
+        output = sanitize_log_line(
+            "abcdefghijk\nmnopqrstuvwxyz",
+            max_length=16,
+            truncation_marker="...",
+        )
+        self.assertEqual(output, "abcdefghijk\\n...")
+        self.assertEqual(len(output), 16)
+
+    def test_custom_marker_does_not_split_escape_token(self):
+        output = sanitize_log_line(
+            "abcdefghijkl\nmnopqrstuvwxyz",
+            max_length=16,
+            truncation_marker="...",
+        )
+        self.assertEqual(output, "abcdefghijkl...")
+        self.assertEqual(len(output), 15)
+
     def test_custom_marker(self):
         output = sanitize_log_line("abcdefghijklmnopqrstuvwxyz", max_length=16, truncation_marker="[cut]")
         self.assertEqual(output, "abcdefghijk[cut]")
