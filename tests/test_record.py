@@ -84,6 +84,58 @@ class TestRecordScalars(PylogcageTestCase):
     def test_bytearray(self):
         self.assertEqual(sanitize_record(bytearray(b"a\nb")), "a\\nb")
 
+
+    def test_timezone_aware_datetime(self):
+        tz = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+        value = datetime.datetime(2020, 1, 2, 3, 4, 5, tzinfo=tz)
+        self.assertEqual(
+            sanitize_record(value),
+            "2020-01-02T03:04:05+05:30",
+        )
+
+    def test_date_in_record(self):
+        value = {"date": datetime.date(2020, 1, 2)}
+        self.assertEqual(
+            sanitize_record(value),
+            {"date": "2020-01-02"},
+        )
+
+    def test_timezone_aware_time(self):
+        tz = datetime.timezone(datetime.timedelta(hours=-4))
+        value = datetime.time(3, 4, 5, tzinfo=tz)
+        self.assertEqual(
+            sanitize_record(value),
+            "03:04:05-04:00",
+        )
+
+    def test_nested_date_and_time_values(self):
+        value = {
+            "events": [
+                {
+                    "timestamp": datetime.datetime(
+                        2020, 1, 2, 3, 4, 5,
+                        tzinfo=datetime.timezone.utc,
+                    ),
+                    "date": datetime.date(2020, 1, 2),
+                    "time": datetime.time(
+                        3, 4, 5, tzinfo=datetime.timezone.utc,
+                    ),
+                }
+            ]
+        }
+        self.assertEqual(
+            sanitize_record(value),
+            {
+                "events": [
+                    {
+                        "timestamp": "2020-01-02T03:04:05+00:00",
+                        "date": "2020-01-02",
+                        "time": "03:04:05+00:00",
+                    }
+                ]
+            },
+        )
+
     def test_datetime(self):
         value = datetime.datetime(2020, 1, 2, 3, 4, 5)
         self.assertEqual(sanitize_record(value), "2020-01-02T03:04:05")
